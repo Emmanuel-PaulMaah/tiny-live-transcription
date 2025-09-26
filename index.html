@@ -4,31 +4,63 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>tiny live transcription</title>
+  <meta name="theme-color" content="#0b0c10">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <h1>tiny live transcription</h1>
 
-  <p class="warn">this simplest version exposes a key in the browser. use a restricted/expiring key for demos only.</p>
+  <div class="container">
+    <p class="warn">this demo sends audio straight to deepgram from your browser and uses a browser-exposed key. use a restricted/temporary key for testing only.</p>
 
-  <div>
-    <label>deepgram api key:
-      <input id="dgKey" type="password" placeholder="dg_xxx..." autocomplete="off">
-    </label>
-    <label style="margin-left:1rem;">language:
-      <input id="lang" value="en" />
-    </label>
-    <button id="start">start</button>
-    <button id="stop" disabled>stop</button>
-    <span id="status">idle</span>
+    <!-- controls -->
+    <div class="controls" role="group" aria-label="connection settings">
+      <label for="dgKey">
+        deepgram api key
+        <input id="dgKey" type="password" placeholder="dg_xxxxxxxxxxxxxxxxx" autocomplete="off" />
+      </label>
+
+      <label for="lang" style="min-width:180px;">
+        language
+        <input id="lang" type="text" value="en" />
+      </label>
+    </div>
+
+    <!-- transcript panel -->
+    <div id="transcript" aria-live="polite" aria-atomic="false"></div>
   </div>
 
-  <div id="transcript" aria-live="polite"></div>
+  <!-- animated decorative waveform (css-only) -->
+  <div class="wave-wrap"><div class="wave"></div></div>
 
-  <footer>
-    powered by deepgram live websocket (<code>wss://api.deepgram.com/v1/listen</code>) with
-    <code>smart_format=true</code>. final chunks only. on stop, we send <code>{"type":"Finalize"}</code> and download a .txt. 
-  </footer>
+  <!-- bottom action bar -->
+  <div class="action-bar" role="toolbar" aria-label="recording controls">
+    <div class="action-bar-inner">
+      <div class="action-left"></div>
+
+      <div class="action-center">
+        <!-- START: big round red button with mic icon -->
+        <button id="start" aria-label="start recording" title="start recording">
+          <!-- mic svg -->
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zM5 11a1 1 0 0 1 2 0 5 5 0 0 0 10 0 1 1 0 1 1 2 0 7 7 0 0 1-6 6.93V20h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.07A7 7 0 0 1 5 11z" />
+          </svg>
+        </button>
+
+        <!-- STOP: big dark pill with stop icon -->
+        <button id="stop" aria-label="stop recording" title="stop recording" disabled>
+          <!-- stop svg -->
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M7 7h10v10H7z" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="action-right">
+        <span id="status">idle</span>
+      </div>
+    </div>
+  </div>
 
 <script>
 (() => {
@@ -73,43 +105,35 @@
     a.remove();
   }
 
-  function parseDeepgram(msg) {
-    // handle a variety of deepgram payload shapes defensively
-    // prefer "is_final" gating; pull transcript from first alternative
+  function parseDeepgramMessage(event) {
     try {
-      const data = JSON.parse(msg.data);
-      // results often under data.channel.alternatives[0].transcript
+      const data = JSON.parse(event.data);
+
+      // detect final flag
       let isFinal = false;
-      let transcript = '';
+      if (typeof data.is_final === 'boolean') isFinal = data.is_final;
+      else if (data.channel && typeof data.channel.is_final === 'boolean') isFinal = data.channel.is_final;
 
-      if (typeof data.is_final === 'boolean') {
-        isFinal = data.is_final;
-      } else if (data.channel && typeof data.channel.is_final === 'boolean') {
-        isFinal = data.channel.is_final;
-      }
-
+      // extract transcript text
       let alt;
       if (data.channel && Array.isArray(data.channel.alternatives) && data.channel.alternatives.length) {
         alt = data.channel.alternatives[0];
       } else if (Array.isArray(data.alternatives) && data.alternatives.length) {
         alt = data.alternatives[0];
       }
-      if (alt && typeof alt.transcript === 'string') {
-        transcript = alt.transcript;
-      }
+      const transcript = (alt && typeof alt.transcript === 'string') ? alt.transcript : '';
 
-      if (!transcript) return; // nothing to show
+      if (!transcript) return;
 
       if (isFinal) {
         partialText = '';
-        // append with a space if needed
         finalizedText += (finalizedText && !finalizedText.endsWith('\n') ? ' ' : '') + transcript;
       } else {
         partialText = transcript;
       }
       render();
-    } catch (e) {
-      // non-json (e.g., binary acks) — ignore
+    } catch (_) {
+      // ignore non-JSON frames
     }
   }
 
@@ -117,21 +141,27 @@
     const key = keyEl.value.trim();
     if (!key) { alert('paste your Deepgram API key first'); return; }
 
-    setStatus('requesting mic...');
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    setStatus('requesting mic…');
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      setStatus('mic permission denied');
+      console.error(err);
+      return;
+    }
+
     const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
       ? 'audio/webm;codecs=opus'
       : 'audio/webm';
     mediaRecorder = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32000 });
 
-    // connect websocket
     const params = new URLSearchParams({
       model: 'nova-3',
       language: langEl.value || 'en',
       smart_format: 'true',
       punctuate: 'true',
       interim_results: 'true',
-      vad_turnoff: '500' // small endpointing hint; optional
+      vad_turnoff: '500'
     });
 
     ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params.toString()}`, ['token', key]);
@@ -143,7 +173,6 @@
 
     ws.onopen = () => {
       setStatus('connected • streaming');
-      // chunk size: ~250ms gives snappy updates
       mediaRecorder.addEventListener('dataavailable', (e) => {
         if (e.data && e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
           ws.send(e.data);
@@ -154,18 +183,14 @@
       stopBtn.disabled = false;
     };
 
-    ws.onmessage = parseDeepgram;
-
-    ws.onerror = () => { setStatus('websocket error'); };
-
+    ws.onmessage = parseDeepgramMessage;
+    ws.onerror = () => setStatus('websocket error');
     ws.onclose = () => {
       setStatus('closed');
       if (!closed) {
-        // if server closed unexpectedly, stop recorder cleanly
         try { mediaRecorder.stop(); } catch {}
         try { stream.getTracks().forEach(t => t.stop()); } catch {}
       }
-      // download the file
       if (finalizedText.trim()) saveToFile();
       startBtn.disabled = false;
       stopBtn.disabled = true;
@@ -173,22 +198,17 @@
   }
 
   function stop() {
-    setStatus('finalizing...');
+    setStatus('finalizing…');
     closed = true;
-
-    // stop sending audio
     try { mediaRecorder.stop(); } catch {}
     try { stream.getTracks().forEach(t => t.stop()); } catch {}
 
-    // tell deepgram to flush any buffered audio and yield a final result
-    // then close the socket shortly after
     try {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'Finalize' })); // server will push final text if any
+        ws.send(JSON.stringify({ type: 'Finalize' }));
       }
     } catch {}
 
-    // give the server a moment to respond, then close
     setTimeout(() => {
       try { if (ws && ws.readyState <= 1) ws.close(1000, 'done'); } catch {}
     }, 300);
@@ -196,6 +216,11 @@
 
   startBtn.addEventListener('click', start);
   stopBtn.addEventListener('click', stop);
+
+  // helpful: warn if not on https (required for mic on most browsers)
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    console.warn('use https (github pages does this) to access the mic.');
+  }
 })();
 </script>
 </body>
