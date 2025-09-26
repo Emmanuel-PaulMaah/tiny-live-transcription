@@ -1,0 +1,390 @@
+/* --- fonts --------------------------------------------------------------- */
+@import url("https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;600;700&display=swap");
+
+/* --- global resets / tokens --------------------------------------------- */
+:root{
+  --bg: #0c0d10;
+  --panel: rgba(255,255,255,.06);
+  --panel-border: rgba(255,255,255,.09);
+  --panel-soft: rgba(255,255,255,.04);
+  --text: rgba(255,255,255,.92);
+  --muted: rgba(255,255,255,.6);
+  --accent: #ff3b30;         /* record red */
+  --accent-2: #15c3ff;       /* cyan pop */
+  --accent-3: #8a5cff;       /* violet pop */
+  --ok: #2bd67b;
+  --warn: #ffb020;
+
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-sm: 10px;
+
+  --shadow-1: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
+  --shadow-2: 0 20px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
+
+  --maxw: 900px;
+}
+
+*,
+*::before,
+*::after{ box-sizing: border-box; }
+
+html, body{
+  height: 100%;
+}
+
+body{
+  margin: 0;
+  background:
+    radial-gradient(1200px 800px at 10% -10%, rgba(139, 92, 255, .25), transparent 60%),
+    radial-gradient(900px 700px at 90% 10%, rgba(21, 195, 255, .18), transparent 60%),
+    linear-gradient(180deg, #0b0c10, #0a0b0e 55%, #07080b);
+  color: var(--text);
+  font-family: "Source Sans 3","Helvetica Neue",Helvetica,Arial,ui-sans-serif,system-ui;
+  line-height: 1.45;
+  letter-spacing: .2px;
+}
+
+/* --- app frame ----------------------------------------------------------- */
+h1{
+  font-weight: 700;
+  font-size: clamp(28px, 2.4vw + 12px, 40px);
+  letter-spacing: .3px;
+  margin: 28px auto 10px;
+  max-width: var(--maxw);
+  padding: 0 22px;
+  text-shadow: 0 1px 0 rgba(0,0,0,.5);
+}
+
+.container{
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 22px 120px; /* leave room for bottom bar */
+}
+
+/* --- status stripe ------------------------------------------------------- */
+#status{
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 14px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow-1);
+  color: var(--muted);
+  transform: translateY(2px);
+}
+
+/* --- controls row -------------------------------------------------------- */
+.controls{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: var(--shadow-1);
+}
+
+label{
+  font-size: 14px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+input[type="password"],
+input[type="text"],
+input:not([type]){
+  appearance: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.06));
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 16px;
+  min-width: 280px;
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.02), var(--shadow-1);
+  transition: box-shadow .2s ease, border-color .2s ease, background .2s ease;
+}
+input::placeholder{ color: rgba(255,255,255,.45); }
+input:focus{
+  border-color: rgba(21,195,255,.5);
+  box-shadow: 0 0 0 6px rgba(21,195,255,.12), var(--shadow-1);
+  background: linear-gradient(180deg, rgba(21,195,255,.12), rgba(255,255,255,.06));
+}
+
+/* --- transcript panel ---------------------------------------------------- */
+#transcript{
+  margin-top: 18px;
+  padding: clamp(16px, 1.8vw, 24px);
+  min-height: 48vh;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--panel-border);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+  box-shadow: var(--shadow-2);
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.25) transparent;
+  position: relative;
+}
+
+#transcript::before{
+  /* subtle inner top glow */
+  content: "";
+  position: sticky;
+  top: 0; left: 0; right: 0;
+  height: 18px;
+  display: block;
+  background: linear-gradient(180deg, rgba(255,255,255,.12), transparent);
+  pointer-events: none;
+}
+
+#transcript div{
+  font-size: clamp(22px, 2.8vw + 10px, 34px); /* huge, readable */
+  line-height: 1.35;
+  word-wrap: break-word;
+}
+
+#transcript .partial{
+  opacity: .45;
+  font-style: italic;
+}
+
+/* --- animated waveform (decorative) ------------------------------------- */
+/* The waveform sits just above the bottom action bar. It animates only when
+   the app is "recording". We detect that with :has() by checking if the Stop
+   button is enabled (not [disabled]). Most modern browsers support :has(). */
+
+.wave-wrap{
+  position: fixed;
+  left: 0; right: 0; bottom: 92px; /* sits above the bottom bar */
+  height: 96px;
+  pointer-events: none;
+  z-index: 20;
+  opacity: .75;
+  mask-image: linear-gradient(90deg, transparent 0, black 6%, black 94%, transparent 100%);
+  backdrop-filter: blur(0.5px);
+}
+
+.wave{
+  position: absolute; inset: 0;
+  background:
+    /* layered equalizer bars */
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,.16) 0,
+      rgba(255,255,255,.16) 2px,
+      transparent 2px,
+      transparent 8px
+    ),
+    radial-gradient(1200px 120px at 50% 50%, rgba(21,195,255,.18), transparent 60%),
+    radial-gradient(1000px 140px at 45% 40%, rgba(138,92,255,.18), transparent 60%);
+  transform-origin: center;
+  filter: drop-shadow(0 10px 30px rgba(21,195,255,.25));
+}
+
+/* bar heights modulated by animated mask */
+.wave::before{
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, var(--accent) 0%, #ff7a70 100%);
+  mix-blend-mode: screen;
+  opacity: .45;
+}
+
+.wave::after{
+  content: "";
+  position: absolute; inset: 0;
+  /* animated vertical noise as mask to fake amplitude */
+  --w: 8px; /* bar width + gap from repeating gradient above */
+  background:
+    repeating-linear-gradient(90deg, black 0 calc(var(--w)), transparent calc(var(--w)) calc(var(--w) + 0px));
+  -webkit-mask:
+    linear-gradient(180deg, white 0%, transparent 100%) top / 100% 100% no-repeat,
+    /* moving per-bar heights */
+    paint(wave-heights);
+  mask:
+    linear-gradient(180deg, white 0%, transparent 100%) top / 100% 100% no-repeat;
+  opacity: .9;
+}
+
+/* fallback animation (no CSS paint API): pulsing transform */
+@keyframes wiggle {
+  0%   { transform: scaleY(0.7); }
+  50%  { transform: scaleY(1.15); }
+  100% { transform: scaleY(0.7); }
+}
+.wave{ animation: wiggle 1.6s ease-in-out infinite; }
+
+/* only animate when recording (stop button enabled) */
+body:has(#stop:not([disabled])) .wave-wrap{ opacity: .95; }
+body:has(#stop:not([disabled])) .wave{ animation-duration: .9s; }
+
+/* --- bottom action bar --------------------------------------------------- */
+.action-bar{
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
+  padding: 14px 18px 22px;
+  background:
+    radial-gradient(80% 120% at 50% 120%, rgba(0,0,0,.65), rgba(0,0,0,.85)),
+    linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+  border-top: 1px solid rgba(255,255,255,.08);
+  backdrop-filter: blur(14px) saturate(120%);
+  box-shadow: 0 -10px 30px rgba(0,0,0,.5);
+}
+
+.action-bar-inner{
+  max-width: var(--maxw);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 14px;
+}
+
+/* center the primary action */
+.action-center{ display: flex; justify-content: center; }
+
+/* --- big primary buttons ------------------------------------------------- */
+button{
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  font-weight: 700;
+  padding: 14px 18px;
+  cursor: pointer;
+  transition: transform .08s ease, box-shadow .2s ease, opacity .2s ease, background .2s ease;
+  user-select: none;
+  will-change: transform;
+}
+
+button:disabled{ cursor: not-allowed; opacity: .5; }
+
+/* START: round, red, with SVG mic icon expected inside */
+#start{
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 10px;
+  min-width: 64px; min-height: 64px;
+  padding: 0 22px; /* room for label if you add one */
+  background: radial-gradient(120% 120% at 30% 30%, #ff7a70, var(--accent));
+  color: white;
+  box-shadow: 0 14px 40px rgba(255, 59, 48, .45), inset 0 1px 0 rgba(255,255,255,.2);
+}
+#start svg{ width: 28px; height: 28px; }
+#start:active{ transform: translateY(1px) scale(.99); }
+#start:not(:disabled):hover{ box-shadow: 0 18px 50px rgba(255, 59, 48, .6), inset 0 1px 0 rgba(255,255,255,.25); }
+
+/* pulsing ring while idle to invite action */
+#start:disabled{ opacity: .5; }
+#start:not(:disabled)::after{
+  content: "";
+  position: absolute;
+  width: 64px; height: 64px; border-radius: 999px;
+  box-shadow: 0 0 0 0 rgba(255,59,48,.45);
+  animation: pulse 1.8s ease-out infinite;
+}
+@keyframes pulse{
+  0%{ box-shadow: 0 0 0 0 rgba(255,59,48,.45); }
+  70%{ box-shadow: 0 0 0 22px rgba(255,59,48,0); }
+  100%{ box-shadow: 0 0 0 0 rgba(255,59,48,0); }
+}
+
+/* STOP: bold, neutral-but-strong with square-ish pill + SVG stop icon */
+#stop{
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 10px;
+  min-width: 64px; min-height: 64px;
+  padding: 0 26px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #2a2d35, #1b1e24);
+  color: #fff;
+  box-shadow: 0 14px 40px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);
+}
+#stop svg{ width: 26px; height: 26px; }
+#stop:not(:disabled):hover{
+  background: linear-gradient(180deg, #323641, #1b1e24);
+}
+#stop:active{ transform: translateY(1px) scale(.99); }
+
+/* --- footer / microcopy -------------------------------------------------- */
+footer{
+  max-width: var(--maxw);
+  margin: 18px auto 130px;
+  padding: 0 22px;
+  color: var(--muted);
+  font-size: 14px;
+}
+footer code{
+  background: var(--panel-soft);
+  border: 1px solid var(--panel-border);
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+/* --- utility: warning text ---------------------------------------------- */
+.warn{
+  color: #ffb7b3;
+  background: rgba(255,59,48,.08);
+  border: 1px solid rgba(255,59,48,.25);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
+  display: inline-block;
+}
+
+/* --- responsive tweaks --------------------------------------------------- */
+@media (max-width: 640px){
+  .controls{ padding: 14px; }
+  input[type="password"], input[type="text"], input:not([type]){ min-width: 0; width: 100%; }
+  #transcript{ min-height: 46vh; }
+}
+
+/* --- optional dark/light adaptation ------------------------------------- */
+@media (prefers-color-scheme: light){
+  :root{
+    --bg: #ffffff;
+    --panel: rgba(0,0,0,.04);
+    --panel-border: rgba(0,0,0,.08);
+    --panel-soft: rgba(0,0,0,.03);
+    --text: #0b0c10;
+    --muted: rgba(0,0,0,.6);
+  }
+  body{
+    background:
+      radial-gradient(1200px 800px at 10% -10%, rgba(138,92,255,.12), transparent 60%),
+      radial-gradient(900px 700px at 90% 10%, rgba(21,195,255,.12), transparent 60%),
+      linear-gradient(180deg, #f8f9fb, #ffffff 55%, #f5f7fb);
+    color: var(--text);
+  }
+  .action-bar{
+    background:
+      radial-gradient(80% 120% at 50% 120%, rgba(255,255,255,.8), rgba(255,255,255,.9)),
+      linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.02));
+    border-top: 1px solid rgba(0,0,0,.08);
+  }
+}
+
+/* --- helper classes if you want to wrap markup -------------------------- */
+/* Add these wrappers in your HTML for plug-and-play layout. Not required,
+   but if you want the full chrome, surround your existing elements like:
+   <div class="container">
+     <div class="controls">...</div>
+     <div id="transcript">...</div>
+   </div>
+   <div class="wave-wrap"><div class="wave"></div></div>
+   <div class="action-bar"><div class="action-bar-inner">
+     <div class="action-left"></div>
+     <div class="action-center">
+       <button id="start">...</button>
+       <button id="stop">...</button>
+     </div>
+     <div class="action-right"><span id="status">idle</span></div>
+   </div></div>
+*/
