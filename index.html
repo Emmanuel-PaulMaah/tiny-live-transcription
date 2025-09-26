@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>tiny live transcription</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; }
+    body { margin: 2rem; max-width: 800px; }
+    button { padding: .7rem 1rem; margin-right: .5rem; font-size: 1rem; }
+    #status { margin-left: .5rem; font-size: .95rem; opacity: .7; }
+    #transcript { margin-top: 1rem; padding: 1rem; border: 1px solid #ddd; border-radius: .5rem; min-height: 40vh; white-space: pre-wrap; }
+    .partial { opacity: .6; }
+    footer { margin-top: 2rem; font-size: .85rem; opacity: .7; }
+    .warn { color: #b60000; font-weight: 600; }
+    input[type="password"] { width: 28ch; }
+  </style>
+</head>
+<body>
+  <h1>tiny live transcription</h1>
+
+  <p class="warn">this simplest version exposes a key in the browser. use a restricted/expiring key for demos only.</p>
+
+  <div>
+    <label>deepgram api key:
+      <input id="dgKey" type="password" placeholder="dg_xxx..." autocomplete="off">
+    </label>
+    <label style="margin-left:1rem;">language:
+      <input id="lang" value="en" />
+    </label>
+    <button id="start">start</button>
+    <button id="stop" disabled>stop</button>
+    <span id="status">idle</span>
+  </div>
+
+  <div id="transcript" aria-live="polite"></div>
+
+  <footer>
+    powered by deepgram live websocket (<code>wss://api.deepgram.com/v1/listen</code>) with
+    <code>smart_format=true</code>. final chunks only. on stop, we send <code>{"type":"Finalize"}</code> and download a .txt. 
+  </footer>
+
+<script>
+(() => {
+  const startBtn = document.getElementById('start');
+  const stopBtn  = document.getElementById('stop');
+  const statusEl = document.getElementById('status');
+  const outEl    = document.getElementById('transcript');
+  const keyEl    = document.getElementById('dgKey');
+  const langEl   = document.getElementById('lang');
+
+  let ws, mediaRecorder, stream;
+  let finalizedText = '';
+  let partialText = '';
+  let closed = false;
+
+  function setStatus(s) { statusEl.textContent = s; }
+  function render() {
+    outEl.innerHTML = '';
+    const finalDiv = document.createElement('div');
+    finalDiv.textContent = finalizedText.trim();
+    outEl.appendChild(finalDiv);
+
+    if (partialText) {
+      const partialDiv = document.createElement('div');
+      partialDiv.className = 'partial';
+      partialDiv.textContent = partialText;
+      outEl.appendChild(partialDiv);
+    }
+  }
+
+  function saveToFile() {
+    const ts = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    const name = `transcript-${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.txt`;
+    const blob = new Blob([finalizedText.trim()], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(a.href);
+    a.remove();
+  }
+
+  function parseDeepgram(msg) {
+    // handle a variety of deepgram payload shapes defensively
+    // prefer "is_final" gating; pull transcript from first alternative
+    try {
+      const data = JSON.parse(msg.data);
+      // results often under data.channel.alternatives[0].transcript
+      let isFinal = false;
+      let transcript = '';
+
+      if (typeof data.is_final === 'boolean') {
+        isFinal = data.is_final;
+      } else if (data.channel && typeof data.channel.is_final === 'boolean') {
+        isFinal = data.channel.is_final;
+      }
+
+      let alt;
+      if (data.channel && Array.isArray(data.channel.alternatives) && data.channel.alternatives.length) {
+        alt = data.channel.alternatives[0];
+      } else if (Array.isArray(data.alternatives) && data.alternatives.length) {
+        alt = data.alternatives[0];
+      }
+      if (alt && typeof alt.transcript === 'string') {
+        transcript = alt.transcript;
+      }
+
+      if (!transcript) return; // nothing to show
+
+      if (isFinal) {
+        partialText = '';
+        // append with a space if needed
+        finalizedText += (finalizedText && !finalizedText.endsWith('\n') ? ' ' : '') + transcript;
+      } else {
+        partialText = transcript;
+      }
+      render();
+    } catch (e) {
+      // non-json (e.g., binary acks) — ignore
+    }
+  }
+
+  async function start() {
+    const key = keyEl.value.trim();
+    if (!key) { alert('paste your Deepgram API key first'); return; }
+
+    setStatus('requesting mic...');
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : 'audio/webm';
+    mediaRecorder = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32000 });
+
+    // connect websocket
+    const params = new URLSearchParams({
+      model: 'nova-3',
+      language: langEl.value || 'en',
+      smart_format: 'true',
+      punctuate: 'true',
+      interim_results: 'true',
+      vad_turnoff: '500' // small endpointing hint; optional
+    });
+
+    ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params.toString()}`, ['token', key]);
+
+    closed = false;
+    finalizedText = '';
+    partialText = '';
+    render();
+
+    ws.onopen = () => {
+      setStatus('connected • streaming');
+      // chunk size: ~250ms gives snappy updates
+      mediaRecorder.addEventListener('dataavailable', (e) => {
+        if (e.data && e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+          ws.send(e.data);
+        }
+      });
+      mediaRecorder.start(250);
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+    };
+
+    ws.onmessage = parseDeepgram;
+
+    ws.onerror = () => { setStatus('websocket error'); };
+
+    ws.onclose = () => {
+      setStatus('closed');
+      if (!closed) {
+        // if server closed unexpectedly, stop recorder cleanly
+        try { mediaRecorder.stop(); } catch {}
+        try { stream.getTracks().forEach(t => t.stop()); } catch {}
+      }
+      // download the file
+      if (finalizedText.trim()) saveToFile();
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    };
+  }
+
+  function stop() {
+    setStatus('finalizing...');
+    closed = true;
+
+    // stop sending audio
+    try { mediaRecorder.stop(); } catch {}
+    try { stream.getTracks().forEach(t => t.stop()); } catch {}
+
+    // tell deepgram to flush any buffered audio and yield a final result
+    // then close the socket shortly after
+    try {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'Finalize' })); // server will push final text if any
+      }
+    } catch {}
+
+    // give the server a moment to respond, then close
+    setTimeout(() => {
+      try { if (ws && ws.readyState <= 1) ws.close(1000, 'done'); } catch {}
+    }, 300);
+  }
+
+  startBtn.addEventListener('click', start);
+  stopBtn.addEventListener('click', stop);
+})();
+</script>
+</body>
+</html>
